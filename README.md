@@ -6,7 +6,7 @@ Minesweeper in pygame.
 
 ```
 pip install pygame
-python minesweeper.py
+python main.py
 ```
 
 ## Controls
