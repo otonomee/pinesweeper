@@ -1,6 +1,6 @@
 # pinesweeper
 
-Minesweeper in pygame.
+Pinesweeper in pygame.
 
 ## Run
 

@@ -1,4 +1,4 @@
-"""Minesweeper in pygame. Left-click reveals, right-click flags,
+"""Pinesweeper in pygame. Left-click reveals, right-click flags,
 double-click a number to chord-reveal neighbors.
 
 Difficulties: B = Beginner (9x9, 10), I = Intermediate (16x16, 40),
@@ -232,7 +232,7 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
     elif board.game_over:
         status_text, status_color = "GAME OVER", ACCENT_BAD
     else:
-        status_text, status_color = "MINESWEEPER", TEXT
+        status_text, status_color = "PINESWEEPER", TEXT
 
     title = big_font.render(status_text, True, status_color)
     screen.blit(title, (PAD, 14))
@@ -362,7 +362,7 @@ def make_board(name):
 
 def main():
     pygame.init()
-    pygame.display.set_caption("Minesweeper")
+    pygame.display.set_caption("Pinesweeper")
 
     stats = load_stats()
     difficulty = DEFAULT_DIFFICULTY
