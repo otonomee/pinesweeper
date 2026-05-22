@@ -24,34 +24,36 @@ DIFFICULTIES = {
 DEFAULT_DIFFICULTY = "Intermediate"
 STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stats.json")
 
-# palette
-BG = (38, 42, 52)
-PANEL = (28, 31, 38)
-HIDDEN_TOP = (96, 104, 120)
-HIDDEN_BOT = (62, 68, 80)
-HIDDEN_HOVER = (112, 122, 140)
-REVEALED = (210, 214, 222)
-REVEALED_ALT = (198, 202, 212)
-GRID_LINE = (150, 154, 162)
-TEXT = (235, 238, 245)
-SUBTEXT = (170, 176, 188)
-ACCENT_OK = (88, 200, 120)
-ACCENT_BAD = (235, 90, 90)
-ACCENT_SEL = (90, 140, 240)
-FLAG_RED = (230, 70, 70)
-FLAG_POLE = (40, 40, 48)
-MINE_BLACK = (24, 26, 32)
-MINE_SHINE = (200, 200, 210)
-BOOM = (255, 170, 60)
+# palette - dark forest
+BG = (22, 32, 26)
+PANEL = (14, 22, 18)
+HIDDEN_TOP = (58, 90, 64)
+HIDDEN_BOT = (34, 56, 40)
+HIDDEN_HOVER = (74, 112, 80)
+REVEALED = (168, 188, 158)
+REVEALED_ALT = (156, 178, 148)
+GRID_LINE = (90, 114, 90)
+TEXT = (224, 240, 220)
+SUBTEXT = (150, 178, 152)
+ACCENT_OK = (120, 210, 130)
+ACCENT_BAD = (210, 110, 90)
+ACCENT_SEL = (96, 168, 110)
+FLAG_RED = (210, 110, 90)
+FLAG_POLE = (40, 36, 28)
+PINE_DARK = (54, 76, 48)
+PINE_MID = (96, 120, 70)
+PINE_LIGHT = (148, 170, 96)
+PINE_SHADOW = (28, 40, 26)
+BOOM = (240, 170, 80)
 NUM_COLORS = {
-    1: (52, 120, 246),
-    2: (52, 168, 83),
-    3: (235, 80, 80),
-    4: (130, 60, 200),
-    5: (190, 90, 30),
-    6: (40, 170, 180),
-    7: (60, 60, 80),
-    8: (130, 130, 140),
+    1: (90, 160, 220),
+    2: (60, 170, 90),
+    3: (220, 110, 90),
+    4: (140, 90, 200),
+    5: (200, 130, 60),
+    6: (80, 190, 180),
+    7: (90, 100, 80),
+    8: (160, 170, 150),
 }
 
 
@@ -196,14 +198,39 @@ def draw_flag(screen, rect):
 
 
 def draw_mine(screen, rect, exploded=False):
+    """Draw a pinecone in the cell. If exploded, flash a warm halo behind it."""
     cx, cy = rect.center
-    r = rect.width // 3
+    w = rect.width
     if exploded:
-        pygame.draw.circle(screen, BOOM, (cx, cy), r + 3)
-    pygame.draw.circle(screen, MINE_BLACK, (cx, cy), r)
-    for dx, dy in [(-r-2, 0), (r+2, 0), (0, -r-2), (0, r+2)]:
-        pygame.draw.line(screen, MINE_BLACK, (cx, cy), (cx + dx, cy + dy), 2)
-    pygame.draw.circle(screen, MINE_SHINE, (cx - r // 3, cy - r // 3), max(2, r // 5))
+        pygame.draw.circle(screen, BOOM, (cx, cy), w // 2 - 2)
+
+    # body: ovoid built from overlapping scale rows (chevrons)
+    body_w = int(w * 0.55)
+    body_h = int(w * 0.72)
+    top = cy - body_h // 2
+    rows = 5
+    row_h = body_h // rows
+    for i in range(rows):
+        # row gets narrower toward top and bottom (ovoid)
+        taper = 1 - abs((i - (rows - 1) / 2) / ((rows - 1) / 2)) * 0.35
+        rw = int(body_w * taper)
+        ry = top + i * row_h
+        # base scale
+        pygame.draw.ellipse(screen, PINE_DARK, (cx - rw // 2, ry, rw, row_h + 2))
+        # highlight chevron
+        hl_w = max(2, rw - 6)
+        pygame.draw.ellipse(screen, PINE_MID, (cx - hl_w // 2, ry + 1, hl_w, max(2, row_h - 1)))
+        # tiny top edge highlight
+        pygame.draw.arc(screen, PINE_LIGHT,
+                        (cx - hl_w // 2, ry, hl_w, max(3, row_h)),
+                        3.4, 6.0, 1)
+
+    # stem at top
+    stem_w = max(2, w // 10)
+    pygame.draw.rect(screen, FLAG_POLE, (cx - stem_w // 2, top - 3, stem_w, 4))
+    # small needle sprigs
+    pygame.draw.line(screen, PINE_LIGHT, (cx - 1, top - 2), (cx - 5, top - 6), 1)
+    pygame.draw.line(screen, PINE_LIGHT, (cx + 1, top - 2), (cx + 5, top - 6), 1)
 
 
 def difficulty_button_rects(W):
