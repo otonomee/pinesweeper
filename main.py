@@ -12,8 +12,8 @@ import random
 import pygame
 
 CELL = 32
-MARGIN_TOP = 72
-PAD = 12
+MARGIN_TOP = 96
+PAD = 14
 DOUBLE_CLICK_MS = 350
 
 DIFFICULTIES = {
@@ -24,36 +24,61 @@ DIFFICULTIES = {
 DEFAULT_DIFFICULTY = "Intermediate"
 STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stats.json")
 
-# palette - dark forest
-BG = (22, 32, 26)
-PANEL = (14, 22, 18)
-HIDDEN_TOP = (58, 90, 64)
-HIDDEN_BOT = (34, 56, 40)
-HIDDEN_HOVER = (74, 112, 80)
-REVEALED = (168, 188, 158)
-REVEALED_ALT = (156, 178, 148)
-GRID_LINE = (90, 114, 90)
-TEXT = (224, 240, 220)
-SUBTEXT = (150, 178, 152)
-ACCENT_OK = (120, 210, 130)
-ACCENT_BAD = (210, 110, 90)
-ACCENT_SEL = (96, 168, 110)
-FLAG_RED = (210, 110, 90)
-FLAG_POLE = (40, 36, 28)
-PINE_DARK = (54, 76, 48)
-PINE_MID = (96, 120, 70)
-PINE_LIGHT = (148, 170, 96)
-PINE_SHADOW = (28, 40, 26)
-BOOM = (240, 170, 80)
+# palette - Windows 7 Minesweeper, tinted with the mint/cyan/evergreen set
+#   aquamarine #b5ffe1  celadon #93e5ab  mint-leaf #65b891
+#   dark-cyan  #4e878c  evergreen #00241b
+AQUAMARINE = (181, 255, 225)
+CELADON = (147, 229, 171)
+MINT = (101, 184, 145)
+DARK_CYAN = (78, 135, 140)
+EVERGREEN = (0, 36, 27)
+
+# Win7 chrome: light silvery field with raised/sunken bevels
+BG = (222, 240, 232)           # frosted mint window bg
+PANEL = (202, 226, 216)        # header/panel face
+FIELD_BG = (198, 222, 212)     # play-field base
+# hidden tile: classic raised button, tinted celadon
+HIDDEN_TOP = (198, 236, 214)   # glossy top face
+HIDDEN_BOT = (150, 205, 176)   # shaded bottom face
+HIDDEN_HOVER_TOP = (214, 248, 228)
+HIDDEN_HOVER_BOT = (170, 222, 194)
+HIDDEN_EDGE_LIGHT = (235, 252, 244)  # top/left highlight
+HIDDEN_EDGE_DARK = (96, 150, 124)    # bottom/right shadow
+# revealed = recessed pale cell with thin grid seams
+REVEALED = (224, 242, 234)
+REVEALED_ALT = (214, 234, 225)
+REVEALED_EDGE = (150, 190, 172)  # inset shadow on cleared tiles
+GRID_LINE = (120, 170, 150)      # seams between tiles
+BEVEL_LIGHT = (245, 255, 250)    # outer raised highlight
+BEVEL_DARK = (110, 158, 138)     # outer raised shadow
+TEXT = (18, 54, 42)
+SUBTEXT = (78, 135, 140)         # dark-cyan
+ACCENT_OK = (46, 150, 96)
+ACCENT_BAD = (196, 72, 60)
+ACCENT_SEL = (101, 184, 145)     # mint
+PILL_BG = (176, 214, 196)
+PILL_EDGE_LIGHT = (232, 250, 242)
+PILL_EDGE_DARK = (120, 170, 150)
+LED_BG = (6, 20, 15)             # near-black LED housing
+LED_ON = (255, 64, 48)           # red 7-seg digits
+LED_OFF = (40, 14, 12)           # unlit segment ghost
+FLAG_RED = (200, 48, 48)
+FLAG_POLE = (32, 44, 40)
+PINE_DARK = (44, 92, 68)
+PINE_MID = (78, 135, 140)        # dark-cyan
+PINE_LIGHT = (147, 229, 171)     # celadon
+PINE_SHADOW = (0, 36, 27)
+BOOM = (255, 96, 72)
+# numbers: classic Win minesweeper order, nudged toward the palette
 NUM_COLORS = {
-    1: (90, 160, 220),
-    2: (60, 170, 90),
-    3: (220, 110, 90),
-    4: (140, 90, 200),
-    5: (200, 130, 60),
-    6: (80, 190, 180),
-    7: (90, 100, 80),
-    8: (160, 170, 150),
+    1: (36, 96, 168),     # blue
+    2: (30, 128, 84),     # green
+    3: (196, 72, 60),     # red
+    4: (60, 62, 140),     # navy
+    5: (140, 48, 48),     # maroon
+    6: (78, 135, 140),    # dark-cyan / teal
+    7: (24, 54, 42),      # near-black evergreen
+    8: (90, 110, 104),    # gray
 }
 
 
@@ -174,16 +199,22 @@ class Board:
 
 
 def draw_hidden(screen, rect, hover):
-    top = HIDDEN_HOVER if hover else HIDDEN_TOP
+    top = HIDDEN_HOVER_TOP if hover else HIDDEN_TOP
+    bot = HIDDEN_HOVER_BOT if hover else HIDDEN_BOT
     for i in range(rect.height):
         t = i / max(1, rect.height - 1)
         col = (
-            int(top[0] * (1 - t) + HIDDEN_BOT[0] * t),
-            int(top[1] * (1 - t) + HIDDEN_BOT[1] * t),
-            int(top[2] * (1 - t) + HIDDEN_BOT[2] * t),
+            int(top[0] * (1 - t) + bot[0] * t),
+            int(top[1] * (1 - t) + bot[1] * t),
+            int(top[2] * (1 - t) + bot[2] * t),
         )
         pygame.draw.line(screen, col, (rect.x, rect.y + i), (rect.right - 1, rect.y + i))
-    pygame.draw.rect(screen, (30, 32, 40), rect, 1)
+    # classic Win7 raised button: 2px light on top/left, 2px dark on bottom/right
+    for d in (0, 1):
+        pygame.draw.line(screen, HIDDEN_EDGE_LIGHT, (rect.x + d, rect.y + d), (rect.right - 1 - d, rect.y + d))
+        pygame.draw.line(screen, HIDDEN_EDGE_LIGHT, (rect.x + d, rect.y + d), (rect.x + d, rect.bottom - 1 - d))
+        pygame.draw.line(screen, HIDDEN_EDGE_DARK, (rect.x + d, rect.bottom - 1 - d), (rect.right - 1 - d, rect.bottom - 1 - d))
+        pygame.draw.line(screen, HIDDEN_EDGE_DARK, (rect.right - 1 - d, rect.y + d), (rect.right - 1 - d, rect.bottom - 1 - d))
 
 
 def draw_flag(screen, rect):
@@ -233,14 +264,69 @@ def draw_mine(screen, rect, exploded=False):
     pygame.draw.line(screen, PINE_LIGHT, (cx + 1, top - 2), (cx + 5, top - 6), 1)
 
 
+def draw_bevel(screen, rect, raised=True, light=BEVEL_LIGHT, dark=BEVEL_DARK, width=2):
+    """Draw a Win7-style 3D bevel border. raised=True -> light top/left."""
+    a, b = (light, dark) if raised else (dark, light)
+    for d in range(width):
+        pygame.draw.line(screen, a, (rect.x + d, rect.y + d), (rect.right - 1 - d, rect.y + d))
+        pygame.draw.line(screen, a, (rect.x + d, rect.y + d), (rect.x + d, rect.bottom - 1 - d))
+        pygame.draw.line(screen, b, (rect.x + d, rect.bottom - 1 - d), (rect.right - 1 - d, rect.bottom - 1 - d))
+        pygame.draw.line(screen, b, (rect.right - 1 - d, rect.y + d), (rect.right - 1 - d, rect.bottom - 1 - d))
+
+
+# 7-segment layout: which segments light for each digit.
+#   segs: a(top) b(top-r) c(bot-r) d(bot) e(bot-l) f(top-l) g(mid)
+_SEG = {
+    "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc",
+    "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcfgd",
+    "-": "g", " ": "",
+}
+
+
+def draw_led_digit(screen, rect, ch):
+    """Draw one red 7-seg digit inside rect on the LED housing."""
+    on = _SEG.get(ch, "")
+    x, y, w, h = rect.x, rect.y, rect.width, rect.height
+    t = max(2, w // 6)          # segment thickness
+    m = t                        # margin
+    midy = y + h // 2
+    def seg(name):
+        return LED_ON if name in on else LED_OFF
+    # horizontal segments: a (top), g (mid), d (bottom)
+    pygame.draw.polygon(screen, seg("a"), [(x+m, y+m), (x+w-m, y+m), (x+w-m-t, y+m+t), (x+m+t, y+m+t)])
+    pygame.draw.polygon(screen, seg("g"), [(x+m, midy), (x+m+t, midy-t//2), (x+w-m-t, midy-t//2), (x+w-m, midy), (x+w-m-t, midy+t//2), (x+m+t, midy+t//2)])
+    pygame.draw.polygon(screen, seg("d"), [(x+m+t, y+h-m-t), (x+w-m-t, y+h-m-t), (x+w-m, y+h-m), (x+m, y+h-m)])
+    # vertical segments: f (top-l), b (top-r), e (bot-l), c (bot-r)
+    pygame.draw.polygon(screen, seg("f"), [(x+m, y+m), (x+m+t, y+m+t), (x+m+t, midy-t//2), (x+m, midy)])
+    pygame.draw.polygon(screen, seg("b"), [(x+w-m, y+m), (x+w-m, midy), (x+w-m-t, midy-t//2), (x+w-m-t, y+m+t)])
+    pygame.draw.polygon(screen, seg("e"), [(x+m, midy), (x+m+t, midy+t//2), (x+m+t, y+h-m-t), (x+m, y+h-m)])
+    pygame.draw.polygon(screen, seg("c"), [(x+w-m, midy), (x+w-m, y+h-m), (x+w-m-t, y+h-m-t), (x+w-m-t, midy+t//2)])
+
+
+def draw_led_counter(screen, rect, value):
+    """Draw a 3-digit LED counter (Win7 red-on-black) for value in rect."""
+    pygame.draw.rect(screen, LED_BG, rect)
+    draw_bevel(screen, rect, raised=False, light=(150, 190, 172), dark=(20, 40, 32), width=1)
+    text = f"{max(-99, min(999, value)):3d}".replace(" ", " ")
+    if value < 0:
+        text = f"-{min(99, -value):02d}"
+    text = text[-3:].rjust(3)
+    inner = rect.inflate(-8, -6)
+    dw = inner.width // 3
+    for i, ch in enumerate(text):
+        dr = pygame.Rect(inner.x + i * dw, inner.y, dw, inner.height)
+        draw_led_digit(screen, dr, ch)
+
+
 def difficulty_button_rects(W):
-    """Return ordered list of (name, rect) for the B/I/E selector pills."""
+    """Return ordered list of (name, rect) for the B/I/E selector pills,
+    centered in the Win7 control strip."""
     rects = []
-    btn_w, btn_h = 28, 24
-    gap = 6
+    btn_w, btn_h = 34, 30
+    gap = 8
     total = len(DIFFICULTIES) * btn_w + (len(DIFFICULTIES) - 1) * gap
     x0 = (W - total) // 2
-    y0 = 12
+    y0 = 46
     for i, name in enumerate(DIFFICULTIES):
         rects.append((name, pygame.Rect(x0 + i * (btn_w + gap), y0, btn_w, btn_h)))
     return rects
@@ -249,9 +335,9 @@ def difficulty_button_rects(W):
 def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stats):
     screen.fill(BG)
 
+    # --- Win7 header: title bar + raised control strip ---
     header = pygame.Rect(0, 0, W, MARGIN_TOP)
     pygame.draw.rect(screen, PANEL, header)
-    pygame.draw.line(screen, (60, 64, 76), (0, MARGIN_TOP - 1), (W, MARGIN_TOP - 1))
 
     remaining = board.mines_count - board.flag_count()
     if board.won:
@@ -262,32 +348,41 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
         status_text, status_color = "PINESWEEPER", TEXT
 
     title = big_font.render(status_text, True, status_color)
-    screen.blit(title, (PAD, 14))
+    screen.blit(title, (PAD, 12))
+
+    # raised control strip holding the two LED counters + difficulty buttons
+    strip = pygame.Rect(PAD, 40, W - PAD * 2, 42)
+    pygame.draw.rect(screen, PANEL, strip)
+    draw_bevel(screen, strip, raised=True, width=2)
+
+    # left LED: mines remaining
+    led_w, led_h = 62, 30
+    left_led = pygame.Rect(strip.x + 8, strip.y + (strip.height - led_h) // 2, led_w, led_h)
+    draw_led_counter(screen, left_led, remaining)
+
+    # right LED: doubles as W-L via total; show wins count Win7-style
+    s = stats[difficulty]
+    right_led = pygame.Rect(strip.right - led_w - 8, strip.y + (strip.height - led_h) // 2, led_w, led_h)
+    draw_led_counter(screen, right_led, s["wins"])
 
     for name, rect in difficulty_button_rects(W):
         selected = (name == difficulty)
-        bg = ACCENT_SEL if selected else (20, 22, 28)
-        pygame.draw.rect(screen, bg, rect, border_radius=5)
-        label = mono.render(DIFFICULTIES[name]["label"], True, TEXT)
+        face = ACCENT_SEL if selected else PILL_BG
+        pygame.draw.rect(screen, face, rect)
+        draw_bevel(screen, rect, raised=not selected,
+                   light=PILL_EDGE_LIGHT, dark=PILL_EDGE_DARK, width=2)
+        label = mono.render(DIFFICULTIES[name]["label"], True, EVERGREEN if selected else TEXT)
         screen.blit(label, label.get_rect(center=rect.center))
 
-    counter = mono.render(f"{remaining:03d}", True, FLAG_RED)
-    counter_w = counter.get_width() + 22
-    counter_rect = pygame.Rect(W - counter_w - PAD, 14, counter_w, 30)
-    pygame.draw.rect(screen, (20, 22, 28), counter_rect, border_radius=6)
-    screen.blit(counter, counter.get_rect(center=counter_rect.center))
-
-    s = stats[difficulty]
-    wl_surf = font.render(f"{difficulty}  W {s['wins']}  L {s['losses']}  (S for stats)", True, SUBTEXT)
-    wl_rect = wl_surf.get_rect(topleft=(PAD, MARGIN_TOP - wl_surf.get_height() - 22))
+    # win/loss line (click target for stats overlay), sits under the strip
+    wl_surf = font.render(f"{difficulty}   W {s['wins']}  ·  L {s['losses']}   (S for stats)", True, SUBTEXT)
+    wl_rect = wl_surf.get_rect(topleft=(PAD, strip.bottom + 4))
     screen.blit(wl_surf, wl_rect.topleft)
 
-    hint = font.render("L-click reveal · R-click flag · Double-click chord · R reset · B/I/E difficulty", True, SUBTEXT)
-    screen.blit(hint, (PAD, MARGIN_TOP - hint.get_height() - 6))
-    return wl_rect
-
-    grid_rect = pygame.Rect(PAD - 2, MARGIN_TOP - 2, board.cols * CELL + 4, board.rows * CELL + 4)
-    pygame.draw.rect(screen, GRID_LINE, grid_rect, border_radius=4)
+    # sunken play-field frame
+    grid_rect = pygame.Rect(PAD - 3, MARGIN_TOP - 3, board.cols * CELL + 6, board.rows * CELL + 6)
+    pygame.draw.rect(screen, FIELD_BG, grid_rect)
+    draw_bevel(screen, grid_rect, raised=False, width=2)
 
     for r in range(board.rows):
         for c in range(board.cols):
@@ -297,7 +392,9 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
             if board.revealed[r][c]:
                 base = REVEALED if (r + c) % 2 == 0 else REVEALED_ALT
                 pygame.draw.rect(screen, base, rect)
-                pygame.draw.rect(screen, (170, 174, 184), rect, 1)
+                # soft inset shadow along top/left so cleared tiles feel sunken
+                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y))
+                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1))
                 if (r, c) in board.mines:
                     draw_mine(screen, rect, exploded=(board.exploded == (r, c)))
                 elif board.counts[r][c] > 0:
@@ -316,7 +413,8 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
                 y = MARGIN_TOP + mr * CELL
                 rect = pygame.Rect(x, y, CELL, CELL)
                 pygame.draw.rect(screen, REVEALED, rect)
-                pygame.draw.rect(screen, (170, 174, 184), rect, 1)
+                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y))
+                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1))
                 if board.flagged[mr][mc]:
                     draw_flag(screen, rect)
                 else:
@@ -328,10 +426,13 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
                     y = MARGIN_TOP + r * CELL
                     rect = pygame.Rect(x, y, CELL, CELL)
                     pygame.draw.rect(screen, REVEALED, rect)
-                    pygame.draw.rect(screen, (170, 174, 184), rect, 1)
+                    pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y))
+                    pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1))
                     draw_flag(screen, rect)
                     pygame.draw.line(screen, ACCENT_BAD, rect.topleft, rect.bottomright, 3)
                     pygame.draw.line(screen, ACCENT_BAD, rect.topright, rect.bottomleft, 3)
+
+    return wl_rect
 
 
 def draw_stats_overlay(screen, font, big_font, mono, W, H, stats):
