@@ -24,7 +24,13 @@ DIFFICULTIES = {
     "Expert":       {"rows": 16, "cols": 30, "mines": 99, "key": pygame.K_e, "label": "E"},
 }
 DEFAULT_DIFFICULTY = "Intermediate"
-STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stats.json")
+# When frozen by PyInstaller, __file__ lives in a temp extraction dir that is
+# wiped on exit; write stats next to the executable instead so they persist.
+if getattr(sys, "frozen", False):
+    _APP_DIR = os.path.dirname(sys.executable)
+else:
+    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+STATS_PATH = os.path.join(_APP_DIR, "stats.json")
 
 # top menu bar. Each item is (text, action). A separator is (None, None).
 # An item whose action is ("submenu", [items...]) opens a flyout to the right.
@@ -955,9 +961,19 @@ def make_board(name):
     return Board(d["rows"], d["cols"], d["mines"])
 
 
+def _resource_path(rel):
+    """Path to a bundled resource, whether run from source or a PyInstaller exe."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, rel)
+
+
 def main():
     pygame.init()
     pygame.display.set_caption("Pinesweeper")
+    try:
+        pygame.display.set_icon(pygame.image.load(_resource_path("icon.png")))
+    except (pygame.error, FileNotFoundError):
+        pass
 
     stats, settings = load_state()
     apply_theme(settings["theme"])
