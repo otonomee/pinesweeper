@@ -2,11 +2,11 @@
 
 # pinesweeper
 
-Minesweeper in pygame — glossy Win7-style tiles, a pinecone in place of the mine, and five swappable color themes.
+Minesweeper reimagined in pygame: forests instead of minefields. Pinecone mines, glossy Win7-style tiles, five swappable color themes, three difficulties, and best-time tracking. No install — download the Windows `.exe` and go.
 
 <br clear="left">
 
-![Pinesweeper gameplay](docs/img/gameplay.png)
+![Pinesweeper themes](docs/img/themes-banner.png)
 
 ## Download
 
