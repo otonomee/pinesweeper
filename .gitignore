@@ -1,3 +1,7 @@
 stats.json
 __pycache__/
 *.pyc
+tmp/
+build/
+dist/
+*.spec
