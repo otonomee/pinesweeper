@@ -1,4 +1,4 @@
-"""Pinesweeper in pygame. Left-click reveals, right-click flags,
+"""Pinesweeper in pygame. Left-click reveals, right-click or Shift-click flags,
 double-click a number to chord-reveal neighbors.
 
 Difficulties: B = Beginner (9x9, 10), I = Intermediate (16x16, 40),
@@ -6,6 +6,8 @@ E = Expert (16x30, 99). Press B/I/E to switch (also resets). Press R or F2 to
 reset current difficulty. Wins/losses/best-times are persisted per-difficulty,
 and the chosen theme in stats.json next to this file. Menu bar: Game / Options /
 Help. Left LED is the game timer, right LED is mines remaining."""
+
+import asyncio
 import json
 import os
 import sys
@@ -19,9 +21,15 @@ PAD = 14
 DOUBLE_CLICK_MS = 350
 
 DIFFICULTIES = {
-    "Beginner":     {"rows": 9,  "cols": 9,  "mines": 10, "key": pygame.K_b, "label": "B"},
-    "Intermediate": {"rows": 16, "cols": 16, "mines": 40, "key": pygame.K_i, "label": "I"},
-    "Expert":       {"rows": 16, "cols": 30, "mines": 99, "key": pygame.K_e, "label": "E"},
+    "Beginner": {"rows": 9, "cols": 9, "mines": 10, "key": pygame.K_b, "label": "B"},
+    "Intermediate": {
+        "rows": 16,
+        "cols": 16,
+        "mines": 40,
+        "key": pygame.K_i,
+        "label": "I",
+    },
+    "Expert": {"rows": 16, "cols": 30, "mines": 99, "key": pygame.K_e, "label": "E"},
 }
 DEFAULT_DIFFICULTY = "Intermediate"
 # When frozen by PyInstaller, __file__ lives in a temp extraction dir that is
@@ -32,30 +40,41 @@ else:
     _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 STATS_PATH = os.path.join(_APP_DIR, "stats.json")
 
+
 # top menu bar. Each item is (text, action). A separator is (None, None).
 # An item whose action is ("submenu", [items...]) opens a flyout to the right.
 # Difficulty/theme actions are built dynamically so they can be radio-checked.
 def build_menus():
     theme_items = [(name, f"theme:{name}") for name in THEMES]
     return [
-        ("Game", [
-            ("New Game", "new"),
-            ("High Scores", "stats"),
-            (None, None),
-            ("Beginner", "diff:Beginner"),
-            ("Intermediate", "diff:Intermediate"),
-            ("Expert", "diff:Expert"),
-            (None, None),
-            ("Exit", "exit"),
-        ]),
-        ("Options", [
-            ("Theme", ("submenu", theme_items)),
-        ]),
-        ("Help", [
-            ("Keyboard Shortcuts", "shortcuts"),
-            ("About", "about"),
-        ]),
+        (
+            "Game",
+            [
+                ("New Game", "new"),
+                ("High Scores", "stats"),
+                (None, None),
+                ("Beginner", "diff:Beginner"),
+                ("Intermediate", "diff:Intermediate"),
+                ("Expert", "diff:Expert"),
+                (None, None),
+                ("Exit", "exit"),
+            ],
+        ),
+        (
+            "Options",
+            [
+                ("Theme", ("submenu", theme_items)),
+            ],
+        ),
+        (
+            "Help",
+            [
+                ("Keyboard Shortcuts", "shortcuts"),
+                ("About", "about"),
+            ],
+        ),
     ]
+
 
 # shortcut hints shown right-aligned in dropdown rows, keyed by action.
 SHORTCUT_HINTS = {
@@ -77,147 +96,257 @@ MENU_HINT_GAP = 28  # space reserved for the right-aligned shortcut / arrow
 # ---------------------------------------------------------------------------
 THEMES = {
     "Pine": {
-        "BG": (222, 240, 232), "PANEL": (202, 226, 216),
-        "MENUBAR_BG": (212, 232, 222), "MENU_HOVER": (147, 229, 171),
-        "MENU_DROP_BG": (232, 246, 240), "MENU_SEP": (150, 190, 172),
+        "BG": (222, 240, 232),
+        "PANEL": (202, 226, 216),
+        "MENUBAR_BG": (212, 232, 222),
+        "MENU_HOVER": (147, 229, 171),
+        "MENU_DROP_BG": (232, 246, 240),
+        "MENU_SEP": (150, 190, 172),
         "FIELD_BG": (198, 222, 212),
-        "HIDDEN_TOP": (198, 236, 214), "HIDDEN_BOT": (150, 205, 176),
-        "HIDDEN_HOVER_TOP": (214, 248, 228), "HIDDEN_HOVER_BOT": (170, 222, 194),
-        "HIDDEN_EDGE_LIGHT": (235, 252, 244), "HIDDEN_EDGE_DARK": (96, 150, 124),
+        "HIDDEN_TOP": (198, 236, 214),
+        "HIDDEN_BOT": (150, 205, 176),
+        "HIDDEN_HOVER_TOP": (214, 248, 228),
+        "HIDDEN_HOVER_BOT": (170, 222, 194),
+        "HIDDEN_EDGE_LIGHT": (235, 252, 244),
+        "HIDDEN_EDGE_DARK": (96, 150, 124),
         "GLOSS": (255, 255, 255),
-        "REVEALED": (224, 242, 234), "REVEALED_ALT": (214, 234, 225),
-        "REVEALED_EDGE": (150, 190, 172), "GRID_LINE": (170, 205, 190),
-        "BEVEL_LIGHT": (245, 255, 250), "BEVEL_DARK": (110, 158, 138),
-        "TEXT": (18, 54, 42), "SUBTEXT": (78, 135, 140),
+        "REVEALED": (224, 242, 234),
+        "REVEALED_ALT": (214, 234, 225),
+        "REVEALED_EDGE": (150, 190, 172),
+        "GRID_LINE": (170, 205, 190),
+        "BEVEL_LIGHT": (245, 255, 250),
+        "BEVEL_DARK": (110, 158, 138),
+        "TEXT": (18, 54, 42),
+        "SUBTEXT": (78, 135, 140),
         "MENU_TEXT": (12, 40, 28),
-        "ACCENT_OK": (46, 150, 96), "ACCENT_BAD": (196, 72, 60),
+        "ACCENT_OK": (46, 150, 96),
+        "ACCENT_BAD": (196, 72, 60),
         "ACCENT_SEL": (101, 184, 145),
-        "LED_BG": (6, 20, 15), "LED_ON": (255, 64, 48), "LED_OFF": (40, 14, 12),
-        "FLAG_RED": (200, 48, 48), "FLAG_POLE": (32, 44, 40),
-        "PINE_DARK": (44, 92, 68), "PINE_MID": (78, 135, 140),
-        "PINE_LIGHT": (147, 229, 171), "PINE_SHADOW": (0, 36, 27),
+        "LED_BG": (6, 20, 15),
+        "LED_ON": (255, 64, 48),
+        "LED_OFF": (40, 14, 12),
+        "FLAG_RED": (200, 48, 48),
+        "FLAG_POLE": (32, 44, 40),
+        "PINE_DARK": (44, 92, 68),
+        "PINE_MID": (78, 135, 140),
+        "PINE_LIGHT": (147, 229, 171),
+        "PINE_SHADOW": (0, 36, 27),
         "BOOM": (255, 96, 72),
-        "FACE_BG": (238, 226, 120), "FACE_LINE": (60, 48, 12),
+        "FACE_BG": (238, 226, 120),
+        "FACE_LINE": (60, 48, 12),
         "NUM_COLORS": {
-            1: (36, 96, 168), 2: (30, 128, 84), 3: (196, 72, 60),
-            4: (60, 62, 140), 5: (140, 48, 48), 6: (78, 135, 140),
-            7: (24, 54, 42), 8: (90, 110, 104),
+            1: (36, 96, 168),
+            2: (30, 128, 84),
+            3: (196, 72, 60),
+            4: (60, 62, 140),
+            5: (140, 48, 48),
+            6: (78, 135, 140),
+            7: (24, 54, 42),
+            8: (90, 110, 104),
         },
     },
     "Classic": {
-        "BG": (198, 198, 198), "PANEL": (192, 192, 192),
-        "MENUBAR_BG": (208, 208, 208), "MENU_HOVER": (49, 106, 197),
-        "MENU_DROP_BG": (240, 240, 240), "MENU_SEP": (150, 150, 150),
+        "BG": (198, 198, 198),
+        "PANEL": (192, 192, 192),
+        "MENUBAR_BG": (208, 208, 208),
+        "MENU_HOVER": (49, 106, 197),
+        "MENU_DROP_BG": (240, 240, 240),
+        "MENU_SEP": (150, 150, 150),
         "FIELD_BG": (189, 189, 189),
-        "HIDDEN_TOP": (222, 222, 222), "HIDDEN_BOT": (168, 168, 168),
-        "HIDDEN_HOVER_TOP": (236, 236, 236), "HIDDEN_HOVER_BOT": (186, 186, 186),
-        "HIDDEN_EDGE_LIGHT": (255, 255, 255), "HIDDEN_EDGE_DARK": (128, 128, 128),
+        "HIDDEN_TOP": (222, 222, 222),
+        "HIDDEN_BOT": (168, 168, 168),
+        "HIDDEN_HOVER_TOP": (236, 236, 236),
+        "HIDDEN_HOVER_BOT": (186, 186, 186),
+        "HIDDEN_EDGE_LIGHT": (255, 255, 255),
+        "HIDDEN_EDGE_DARK": (128, 128, 128),
         "GLOSS": (255, 255, 255),
-        "REVEALED": (208, 208, 208), "REVEALED_ALT": (200, 200, 200),
-        "REVEALED_EDGE": (150, 150, 150), "GRID_LINE": (160, 160, 160),
-        "BEVEL_LIGHT": (255, 255, 255), "BEVEL_DARK": (128, 128, 128),
-        "TEXT": (24, 24, 24), "SUBTEXT": (90, 90, 90),
+        "REVEALED": (208, 208, 208),
+        "REVEALED_ALT": (200, 200, 200),
+        "REVEALED_EDGE": (150, 150, 150),
+        "GRID_LINE": (160, 160, 160),
+        "BEVEL_LIGHT": (255, 255, 255),
+        "BEVEL_DARK": (128, 128, 128),
+        "TEXT": (24, 24, 24),
+        "SUBTEXT": (90, 90, 90),
         "MENU_TEXT": (16, 16, 16),
-        "ACCENT_OK": (0, 128, 0), "ACCENT_BAD": (200, 0, 0),
+        "ACCENT_OK": (0, 128, 0),
+        "ACCENT_BAD": (200, 0, 0),
         "ACCENT_SEL": (49, 106, 197),
-        "LED_BG": (0, 0, 0), "LED_ON": (255, 0, 0), "LED_OFF": (48, 0, 0),
-        "FLAG_RED": (208, 0, 0), "FLAG_POLE": (0, 0, 0),
-        "PINE_DARK": (40, 40, 40), "PINE_MID": (90, 90, 90),
-        "PINE_LIGHT": (160, 160, 160), "PINE_SHADOW": (0, 0, 0),
+        "LED_BG": (0, 0, 0),
+        "LED_ON": (255, 0, 0),
+        "LED_OFF": (48, 0, 0),
+        "FLAG_RED": (208, 0, 0),
+        "FLAG_POLE": (0, 0, 0),
+        "PINE_DARK": (40, 40, 40),
+        "PINE_MID": (90, 90, 90),
+        "PINE_LIGHT": (160, 160, 160),
+        "PINE_SHADOW": (0, 0, 0),
         "BOOM": (255, 40, 40),
-        "FACE_BG": (255, 224, 0), "FACE_LINE": (40, 40, 0),
+        "FACE_BG": (255, 224, 0),
+        "FACE_LINE": (40, 40, 0),
         "NUM_COLORS": {
-            1: (0, 0, 255), 2: (0, 128, 0), 3: (255, 0, 0),
-            4: (0, 0, 128), 5: (128, 0, 0), 6: (0, 128, 128),
-            7: (0, 0, 0), 8: (128, 128, 128),
+            1: (0, 0, 255),
+            2: (0, 128, 0),
+            3: (255, 0, 0),
+            4: (0, 0, 128),
+            5: (128, 0, 0),
+            6: (0, 128, 128),
+            7: (0, 0, 0),
+            8: (128, 128, 128),
         },
     },
     "Dark": {
-        "BG": (30, 34, 38), "PANEL": (44, 50, 56),
-        "MENUBAR_BG": (38, 43, 48), "MENU_HOVER": (70, 110, 90),
-        "MENU_DROP_BG": (52, 58, 64), "MENU_SEP": (80, 88, 96),
+        "BG": (30, 34, 38),
+        "PANEL": (44, 50, 56),
+        "MENUBAR_BG": (38, 43, 48),
+        "MENU_HOVER": (70, 110, 90),
+        "MENU_DROP_BG": (52, 58, 64),
+        "MENU_SEP": (80, 88, 96),
         "FIELD_BG": (36, 41, 46),
-        "HIDDEN_TOP": (72, 82, 92), "HIDDEN_BOT": (48, 55, 62),
-        "HIDDEN_HOVER_TOP": (88, 100, 112), "HIDDEN_HOVER_BOT": (60, 70, 80),
-        "HIDDEN_EDGE_LIGHT": (100, 114, 128), "HIDDEN_EDGE_DARK": (28, 32, 36),
+        "HIDDEN_TOP": (72, 82, 92),
+        "HIDDEN_BOT": (48, 55, 62),
+        "HIDDEN_HOVER_TOP": (88, 100, 112),
+        "HIDDEN_HOVER_BOT": (60, 70, 80),
+        "HIDDEN_EDGE_LIGHT": (100, 114, 128),
+        "HIDDEN_EDGE_DARK": (28, 32, 36),
         "GLOSS": (200, 220, 235),
-        "REVEALED": (46, 52, 58), "REVEALED_ALT": (42, 48, 54),
-        "REVEALED_EDGE": (28, 32, 36), "GRID_LINE": (58, 66, 74),
-        "BEVEL_LIGHT": (96, 108, 120), "BEVEL_DARK": (24, 28, 32),
-        "TEXT": (222, 232, 240), "SUBTEXT": (140, 158, 170),
+        "REVEALED": (46, 52, 58),
+        "REVEALED_ALT": (42, 48, 54),
+        "REVEALED_EDGE": (28, 32, 36),
+        "GRID_LINE": (58, 66, 74),
+        "BEVEL_LIGHT": (96, 108, 120),
+        "BEVEL_DARK": (24, 28, 32),
+        "TEXT": (222, 232, 240),
+        "SUBTEXT": (140, 158, 170),
         "MENU_TEXT": (236, 244, 250),
-        "ACCENT_OK": (96, 210, 140), "ACCENT_BAD": (240, 110, 96),
+        "ACCENT_OK": (96, 210, 140),
+        "ACCENT_BAD": (240, 110, 96),
         "ACCENT_SEL": (96, 200, 150),
-        "LED_BG": (0, 0, 0), "LED_ON": (255, 72, 56), "LED_OFF": (48, 16, 14),
-        "FLAG_RED": (232, 96, 88), "FLAG_POLE": (200, 210, 220),
-        "PINE_DARK": (70, 130, 100), "PINE_MID": (110, 180, 150),
-        "PINE_LIGHT": (170, 230, 200), "PINE_SHADOW": (10, 20, 16),
+        "LED_BG": (0, 0, 0),
+        "LED_ON": (255, 72, 56),
+        "LED_OFF": (48, 16, 14),
+        "FLAG_RED": (232, 96, 88),
+        "FLAG_POLE": (200, 210, 220),
+        "PINE_DARK": (70, 130, 100),
+        "PINE_MID": (110, 180, 150),
+        "PINE_LIGHT": (170, 230, 200),
+        "PINE_SHADOW": (10, 20, 16),
         "BOOM": (255, 120, 96),
-        "FACE_BG": (232, 200, 80), "FACE_LINE": (30, 26, 8),
+        "FACE_BG": (232, 200, 80),
+        "FACE_LINE": (30, 26, 8),
         "NUM_COLORS": {
-            1: (110, 160, 250), 2: (110, 210, 140), 3: (240, 120, 110),
-            4: (150, 150, 240), 5: (220, 130, 120), 6: (120, 200, 200),
-            7: (220, 232, 240), 8: (170, 180, 190),
+            1: (110, 160, 250),
+            2: (110, 210, 140),
+            3: (240, 120, 110),
+            4: (150, 150, 240),
+            5: (220, 130, 120),
+            6: (120, 200, 200),
+            7: (220, 232, 240),
+            8: (170, 180, 190),
         },
     },
     # midnight-violet #160f29 / stormy-teal #246a73 / dark-cyan #368f8b
     # champagne-mist #f3dfc1 / desert-sand #ddbea8
     "Coastal": {
-        "BG": (243, 223, 193), "PANEL": (221, 190, 168),
-        "MENUBAR_BG": (233, 208, 182), "MENU_HOVER": (54, 143, 139),
-        "MENU_DROP_BG": (247, 233, 210), "MENU_SEP": (190, 160, 140),
+        "BG": (243, 223, 193),
+        "PANEL": (221, 190, 168),
+        "MENUBAR_BG": (233, 208, 182),
+        "MENU_HOVER": (54, 143, 139),
+        "MENU_DROP_BG": (247, 233, 210),
+        "MENU_SEP": (190, 160, 140),
         "FIELD_BG": (221, 190, 168),
-        "HIDDEN_TOP": (238, 214, 188), "HIDDEN_BOT": (206, 176, 152),
-        "HIDDEN_HOVER_TOP": (248, 228, 204), "HIDDEN_HOVER_BOT": (220, 192, 168),
-        "HIDDEN_EDGE_LIGHT": (252, 240, 222), "HIDDEN_EDGE_DARK": (150, 120, 100),
+        "HIDDEN_TOP": (238, 214, 188),
+        "HIDDEN_BOT": (206, 176, 152),
+        "HIDDEN_HOVER_TOP": (248, 228, 204),
+        "HIDDEN_HOVER_BOT": (220, 192, 168),
+        "HIDDEN_EDGE_LIGHT": (252, 240, 222),
+        "HIDDEN_EDGE_DARK": (150, 120, 100),
         "GLOSS": (255, 250, 240),
-        "REVEALED": (243, 227, 204), "REVEALED_ALT": (236, 218, 194),
-        "REVEALED_EDGE": (190, 160, 138), "GRID_LINE": (206, 178, 156),
-        "BEVEL_LIGHT": (252, 242, 226), "BEVEL_DARK": (150, 122, 104),
-        "TEXT": (22, 15, 41), "SUBTEXT": (36, 106, 115),
+        "REVEALED": (243, 227, 204),
+        "REVEALED_ALT": (236, 218, 194),
+        "REVEALED_EDGE": (190, 160, 138),
+        "GRID_LINE": (206, 178, 156),
+        "BEVEL_LIGHT": (252, 242, 226),
+        "BEVEL_DARK": (150, 122, 104),
+        "TEXT": (22, 15, 41),
+        "SUBTEXT": (36, 106, 115),
         "MENU_TEXT": (18, 12, 34),
-        "ACCENT_OK": (54, 143, 139), "ACCENT_BAD": (176, 66, 54),
+        "ACCENT_OK": (54, 143, 139),
+        "ACCENT_BAD": (176, 66, 54),
         "ACCENT_SEL": (36, 106, 115),
-        "LED_BG": (22, 15, 41), "LED_ON": (255, 96, 72), "LED_OFF": (48, 24, 30),
-        "FLAG_RED": (176, 66, 54), "FLAG_POLE": (22, 15, 41),
-        "PINE_DARK": (36, 106, 115), "PINE_MID": (54, 143, 139),
-        "PINE_LIGHT": (200, 224, 210), "PINE_SHADOW": (22, 15, 41),
+        "LED_BG": (22, 15, 41),
+        "LED_ON": (255, 96, 72),
+        "LED_OFF": (48, 24, 30),
+        "FLAG_RED": (176, 66, 54),
+        "FLAG_POLE": (22, 15, 41),
+        "PINE_DARK": (36, 106, 115),
+        "PINE_MID": (54, 143, 139),
+        "PINE_LIGHT": (200, 224, 210),
+        "PINE_SHADOW": (22, 15, 41),
         "BOOM": (255, 120, 90),
-        "FACE_BG": (243, 223, 193), "FACE_LINE": (22, 15, 41),
+        "FACE_BG": (243, 223, 193),
+        "FACE_LINE": (22, 15, 41),
         "NUM_COLORS": {
-            1: (36, 106, 115), 2: (46, 125, 90), 3: (176, 66, 54),
-            4: (54, 45, 110), 5: (150, 70, 60), 6: (54, 143, 139),
-            7: (22, 15, 41), 8: (120, 100, 90),
+            1: (36, 106, 115),
+            2: (46, 125, 90),
+            3: (176, 66, 54),
+            4: (54, 45, 110),
+            5: (150, 70, 60),
+            6: (54, 143, 139),
+            7: (22, 15, 41),
+            8: (120, 100, 90),
         },
     },
     # prussian-blue #0a1128 / deep-navy #001f54 / yale-blue #034078
     # cerulean #1282a2 / white #fefcfb
     "Deep Ocean": {
-        "BG": (10, 17, 40), "PANEL": (0, 31, 84),
-        "MENUBAR_BG": (6, 24, 62), "MENU_HOVER": (18, 130, 162),
-        "MENU_DROP_BG": (3, 40, 92), "MENU_SEP": (18, 130, 162),
+        "BG": (10, 17, 40),
+        "PANEL": (0, 31, 84),
+        "MENUBAR_BG": (6, 24, 62),
+        "MENU_HOVER": (18, 130, 162),
+        "MENU_DROP_BG": (3, 40, 92),
+        "MENU_SEP": (18, 130, 162),
         "FIELD_BG": (0, 24, 66),
-        "HIDDEN_TOP": (3, 64, 120), "HIDDEN_BOT": (0, 31, 84),
-        "HIDDEN_HOVER_TOP": (10, 84, 148), "HIDDEN_HOVER_BOT": (3, 45, 100),
-        "HIDDEN_EDGE_LIGHT": (18, 130, 162), "HIDDEN_EDGE_DARK": (6, 16, 40),
+        "HIDDEN_TOP": (3, 64, 120),
+        "HIDDEN_BOT": (0, 31, 84),
+        "HIDDEN_HOVER_TOP": (10, 84, 148),
+        "HIDDEN_HOVER_BOT": (3, 45, 100),
+        "HIDDEN_EDGE_LIGHT": (18, 130, 162),
+        "HIDDEN_EDGE_DARK": (6, 16, 40),
         "GLOSS": (200, 230, 245),
-        "REVEALED": (5, 34, 80), "REVEALED_ALT": (3, 29, 72),
-        "REVEALED_EDGE": (6, 16, 40), "GRID_LINE": (14, 54, 104),
-        "BEVEL_LIGHT": (18, 130, 162), "BEVEL_DARK": (6, 14, 34),
-        "TEXT": (254, 252, 251), "SUBTEXT": (120, 180, 205),
+        "REVEALED": (5, 34, 80),
+        "REVEALED_ALT": (3, 29, 72),
+        "REVEALED_EDGE": (6, 16, 40),
+        "GRID_LINE": (14, 54, 104),
+        "BEVEL_LIGHT": (18, 130, 162),
+        "BEVEL_DARK": (6, 14, 34),
+        "TEXT": (254, 252, 251),
+        "SUBTEXT": (120, 180, 205),
         "MENU_TEXT": (255, 255, 255),
-        "ACCENT_OK": (90, 200, 170), "ACCENT_BAD": (240, 110, 96),
+        "ACCENT_OK": (90, 200, 170),
+        "ACCENT_BAD": (240, 110, 96),
         "ACCENT_SEL": (18, 130, 162),
-        "LED_BG": (4, 10, 26), "LED_ON": (255, 80, 64), "LED_OFF": (44, 14, 12),
-        "FLAG_RED": (240, 96, 88), "FLAG_POLE": (254, 252, 251),
-        "PINE_DARK": (3, 64, 120), "PINE_MID": (18, 130, 162),
-        "PINE_LIGHT": (170, 220, 235), "PINE_SHADOW": (4, 10, 26),
+        "LED_BG": (4, 10, 26),
+        "LED_ON": (255, 80, 64),
+        "LED_OFF": (44, 14, 12),
+        "FLAG_RED": (240, 96, 88),
+        "FLAG_POLE": (254, 252, 251),
+        "PINE_DARK": (3, 64, 120),
+        "PINE_MID": (18, 130, 162),
+        "PINE_LIGHT": (170, 220, 235),
+        "PINE_SHADOW": (4, 10, 26),
         "BOOM": (255, 110, 90),
-        "FACE_BG": (240, 214, 90), "FACE_LINE": (10, 17, 40),
+        "FACE_BG": (240, 214, 90),
+        "FACE_LINE": (10, 17, 40),
         "NUM_COLORS": {
-            1: (90, 170, 240), 2: (90, 210, 160), 3: (240, 120, 110),
-            4: (140, 150, 240), 5: (230, 140, 120), 6: (18, 180, 200),
-            7: (254, 252, 251), 8: (160, 180, 200),
+            1: (90, 170, 240),
+            2: (90, 210, 160),
+            3: (240, 120, 110),
+            4: (140, 150, 240),
+            5: (230, 140, 120),
+            6: (18, 180, 200),
+            7: (254, 252, 251),
+            8: (160, 180, 200),
         },
     },
 }
@@ -239,7 +368,10 @@ apply_theme("Pine")
 def load_state():
     """Load per-difficulty wins/losses/best_time plus settings (theme).
     Returns (stats, settings). Back-compat with old wins/losses-only files."""
-    stats = {name: {"wins": 0, "losses": 0, "best_time": None, "scores": []} for name in DIFFICULTIES}
+    stats = {
+        name: {"wins": 0, "losses": 0, "best_time": None, "scores": []}
+        for name in DIFFICULTIES
+    }
     settings = {"theme": "Pine"}
     try:
         with open(STATS_PATH, "r", encoding="utf-8") as f:
@@ -315,7 +447,12 @@ class Board:
 
     def place_mines(self, safe_r, safe_c):
         safe = {(safe_r + dr, safe_c + dc) for dr in (-1, 0, 1) for dc in (-1, 0, 1)}
-        candidates = [(r, c) for r in range(self.rows) for c in range(self.cols) if (r, c) not in safe]
+        candidates = [
+            (r, c)
+            for r in range(self.rows)
+            for c in range(self.cols)
+            if (r, c) not in safe
+        ]
         self.mines = set(random.sample(candidates, self.mines_count))
         for r in range(self.rows):
             for c in range(self.cols):
@@ -324,7 +461,8 @@ class Board:
                 else:
                     self.counts[r][c] = sum(
                         ((r + dr, c + dc) in self.mines)
-                        for dr in (-1, 0, 1) for dc in (-1, 0, 1)
+                        for dr in (-1, 0, 1)
+                        for dc in (-1, 0, 1)
                         if not (dr == 0 and dc == 0)
                     )
 
@@ -380,16 +518,22 @@ class Board:
         self.flagged[r][c] = not self.flagged[r][c]
 
     def check_win(self):
-        revealed_count = sum(self.revealed[r][c] for r in range(self.rows) for c in range(self.cols))
+        revealed_count = sum(
+            self.revealed[r][c] for r in range(self.rows) for c in range(self.cols)
+        )
         if revealed_count == self.rows * self.cols - self.mines_count:
             self.won = True
             self.game_over = True
 
     def flag_count(self):
-        return sum(self.flagged[r][c] for r in range(self.rows) for c in range(self.cols))
+        return sum(
+            self.flagged[r][c] for r in range(self.rows) for c in range(self.cols)
+        )
 
     def any_revealed(self):
-        return any(self.revealed[r][c] for r in range(self.rows) for c in range(self.cols))
+        return any(
+            self.revealed[r][c] for r in range(self.rows) for c in range(self.cols)
+        )
 
 
 def draw_hidden(screen, rect, hover):
@@ -404,7 +548,9 @@ def draw_hidden(screen, rect, hover):
             int(top[1] * (1 - t) + bot[1] * t),
             int(top[2] * (1 - t) + bot[2] * t),
         )
-        pygame.draw.line(screen, col, (rect.x, rect.y + i), (rect.right - 1, rect.y + i))
+        pygame.draw.line(
+            screen, col, (rect.x, rect.y + i), (rect.right - 1, rect.y + i)
+        )
 
     # glossy top highlight: a bright band over the upper ~48%, fading fast so it
     # reads as a crisp Aero sheen rather than a flat wash
@@ -413,26 +559,61 @@ def draw_hidden(screen, rect, hover):
     for i in range(gh):
         t = i / max(1, gh)
         a = int(170 * (1 - t) ** 1.5)  # steep falloff downward
-        pygame.draw.line(gloss, (GLOSS[0], GLOSS[1], GLOSS[2], a), (0, i), (rect.width - 1, i))
+        pygame.draw.line(
+            gloss, (GLOSS[0], GLOSS[1], GLOSS[2], a), (0, i), (rect.width - 1, i)
+        )
     screen.blit(gloss, rect.topleft)
 
     # classic Win7 raised button: 2px light on top/left, 2px dark on bottom/right
     for d in (0, 1):
-        pygame.draw.line(screen, HIDDEN_EDGE_LIGHT, (rect.x + d, rect.y + d), (rect.right - 1 - d, rect.y + d))
-        pygame.draw.line(screen, HIDDEN_EDGE_LIGHT, (rect.x + d, rect.y + d), (rect.x + d, rect.bottom - 1 - d))
-        pygame.draw.line(screen, HIDDEN_EDGE_DARK, (rect.x + d, rect.bottom - 1 - d), (rect.right - 1 - d, rect.bottom - 1 - d))
-        pygame.draw.line(screen, HIDDEN_EDGE_DARK, (rect.right - 1 - d, rect.y + d), (rect.right - 1 - d, rect.bottom - 1 - d))
+        pygame.draw.line(
+            screen,
+            HIDDEN_EDGE_LIGHT,
+            (rect.x + d, rect.y + d),
+            (rect.right - 1 - d, rect.y + d),
+        )
+        pygame.draw.line(
+            screen,
+            HIDDEN_EDGE_LIGHT,
+            (rect.x + d, rect.y + d),
+            (rect.x + d, rect.bottom - 1 - d),
+        )
+        pygame.draw.line(
+            screen,
+            HIDDEN_EDGE_DARK,
+            (rect.x + d, rect.bottom - 1 - d),
+            (rect.right - 1 - d, rect.bottom - 1 - d),
+        )
+        pygame.draw.line(
+            screen,
+            HIDDEN_EDGE_DARK,
+            (rect.right - 1 - d, rect.y + d),
+            (rect.right - 1 - d, rect.bottom - 1 - d),
+        )
 
 
 def draw_flag(screen, rect):
     pole_x = rect.x + rect.width // 3
-    pygame.draw.line(screen, FLAG_POLE, (pole_x, rect.y + 5), (pole_x, rect.bottom - 5), 2)
-    pygame.draw.polygon(screen, FLAG_RED, [
-        (pole_x, rect.y + 5),
-        (rect.right - 6, rect.y + rect.height // 3),
-        (pole_x, rect.y + rect.height // 2 + 1),
-    ])
+    pygame.draw.line(
+        screen, FLAG_POLE, (pole_x, rect.y + 5), (pole_x, rect.bottom - 5), 2
+    )
+    pygame.draw.polygon(
+        screen,
+        FLAG_RED,
+        [
+            (pole_x, rect.y + 5),
+            (rect.right - 6, rect.y + rect.height // 3),
+            (pole_x, rect.y + rect.height // 2 + 1),
+        ],
+    )
     pygame.draw.rect(screen, FLAG_POLE, (pole_x - 4, rect.bottom - 8, 10, 3))
+
+
+def draw_flag_preview(screen, rect):
+    preview = pygame.Surface(rect.size, pygame.SRCALPHA)
+    draw_flag(preview, preview.get_rect())
+    preview.set_alpha(145)
+    screen.blit(preview, rect.topleft)
 
 
 def draw_mine(screen, rect, exploded=False):
@@ -457,11 +638,13 @@ def draw_mine(screen, rect, exploded=False):
         pygame.draw.ellipse(screen, PINE_DARK, (cx - rw // 2, ry, rw, row_h + 2))
         # highlight chevron
         hl_w = max(2, rw - 6)
-        pygame.draw.ellipse(screen, PINE_MID, (cx - hl_w // 2, ry + 1, hl_w, max(2, row_h - 1)))
+        pygame.draw.ellipse(
+            screen, PINE_MID, (cx - hl_w // 2, ry + 1, hl_w, max(2, row_h - 1))
+        )
         # tiny top edge highlight
-        pygame.draw.arc(screen, PINE_LIGHT,
-                        (cx - hl_w // 2, ry, hl_w, max(3, row_h)),
-                        3.4, 6.0, 1)
+        pygame.draw.arc(
+            screen, PINE_LIGHT, (cx - hl_w // 2, ry, hl_w, max(3, row_h)), 3.4, 6.0, 1
+        )
 
     # stem at top
     stem_w = max(2, w // 10)
@@ -479,18 +662,41 @@ def draw_bevel(screen, rect, raised=True, light=None, dark=None, width=2):
         dark = BEVEL_DARK
     a, b = (light, dark) if raised else (dark, light)
     for d in range(width):
-        pygame.draw.line(screen, a, (rect.x + d, rect.y + d), (rect.right - 1 - d, rect.y + d))
-        pygame.draw.line(screen, a, (rect.x + d, rect.y + d), (rect.x + d, rect.bottom - 1 - d))
-        pygame.draw.line(screen, b, (rect.x + d, rect.bottom - 1 - d), (rect.right - 1 - d, rect.bottom - 1 - d))
-        pygame.draw.line(screen, b, (rect.right - 1 - d, rect.y + d), (rect.right - 1 - d, rect.bottom - 1 - d))
+        pygame.draw.line(
+            screen, a, (rect.x + d, rect.y + d), (rect.right - 1 - d, rect.y + d)
+        )
+        pygame.draw.line(
+            screen, a, (rect.x + d, rect.y + d), (rect.x + d, rect.bottom - 1 - d)
+        )
+        pygame.draw.line(
+            screen,
+            b,
+            (rect.x + d, rect.bottom - 1 - d),
+            (rect.right - 1 - d, rect.bottom - 1 - d),
+        )
+        pygame.draw.line(
+            screen,
+            b,
+            (rect.right - 1 - d, rect.y + d),
+            (rect.right - 1 - d, rect.bottom - 1 - d),
+        )
 
 
 # 7-segment layout: which segments light for each digit.
 #   segs: a(top) b(top-r) c(bot-r) d(bot) e(bot-l) f(top-l) g(mid)
 _SEG = {
-    "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc",
-    "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcfgd",
-    "-": "g", " ": "",
+    "0": "abcdef",
+    "1": "bc",
+    "2": "abged",
+    "3": "abgcd",
+    "4": "fgbc",
+    "5": "afgcd",
+    "6": "afgedc",
+    "7": "abc",
+    "8": "abcdefg",
+    "9": "abcfgd",
+    "-": "g",
+    " ": "",
 }
 
 
@@ -498,26 +704,95 @@ def draw_led_digit(screen, rect, ch):
     """Draw one red 7-seg digit inside rect on the LED housing."""
     on = _SEG.get(ch, "")
     x, y, w, h = rect.x, rect.y, rect.width, rect.height
-    t = max(2, w // 6)          # segment thickness
-    m = t                        # margin
+    t = max(2, w // 6)  # segment thickness
+    m = t  # margin
     midy = y + h // 2
+
     def seg(name):
         return LED_ON if name in on else LED_OFF
+
     # horizontal segments: a (top), g (mid), d (bottom)
-    pygame.draw.polygon(screen, seg("a"), [(x+m, y+m), (x+w-m, y+m), (x+w-m-t, y+m+t), (x+m+t, y+m+t)])
-    pygame.draw.polygon(screen, seg("g"), [(x+m, midy), (x+m+t, midy-t//2), (x+w-m-t, midy-t//2), (x+w-m, midy), (x+w-m-t, midy+t//2), (x+m+t, midy+t//2)])
-    pygame.draw.polygon(screen, seg("d"), [(x+m+t, y+h-m-t), (x+w-m-t, y+h-m-t), (x+w-m, y+h-m), (x+m, y+h-m)])
+    pygame.draw.polygon(
+        screen,
+        seg("a"),
+        [
+            (x + m, y + m),
+            (x + w - m, y + m),
+            (x + w - m - t, y + m + t),
+            (x + m + t, y + m + t),
+        ],
+    )
+    pygame.draw.polygon(
+        screen,
+        seg("g"),
+        [
+            (x + m, midy),
+            (x + m + t, midy - t // 2),
+            (x + w - m - t, midy - t // 2),
+            (x + w - m, midy),
+            (x + w - m - t, midy + t // 2),
+            (x + m + t, midy + t // 2),
+        ],
+    )
+    pygame.draw.polygon(
+        screen,
+        seg("d"),
+        [
+            (x + m + t, y + h - m - t),
+            (x + w - m - t, y + h - m - t),
+            (x + w - m, y + h - m),
+            (x + m, y + h - m),
+        ],
+    )
     # vertical segments: f (top-l), b (top-r), e (bot-l), c (bot-r)
-    pygame.draw.polygon(screen, seg("f"), [(x+m, y+m), (x+m+t, y+m+t), (x+m+t, midy-t//2), (x+m, midy)])
-    pygame.draw.polygon(screen, seg("b"), [(x+w-m, y+m), (x+w-m, midy), (x+w-m-t, midy-t//2), (x+w-m-t, y+m+t)])
-    pygame.draw.polygon(screen, seg("e"), [(x+m, midy), (x+m+t, midy+t//2), (x+m+t, y+h-m-t), (x+m, y+h-m)])
-    pygame.draw.polygon(screen, seg("c"), [(x+w-m, midy), (x+w-m, y+h-m), (x+w-m-t, y+h-m-t), (x+w-m-t, midy+t//2)])
+    pygame.draw.polygon(
+        screen,
+        seg("f"),
+        [
+            (x + m, y + m),
+            (x + m + t, y + m + t),
+            (x + m + t, midy - t // 2),
+            (x + m, midy),
+        ],
+    )
+    pygame.draw.polygon(
+        screen,
+        seg("b"),
+        [
+            (x + w - m, y + m),
+            (x + w - m, midy),
+            (x + w - m - t, midy - t // 2),
+            (x + w - m - t, y + m + t),
+        ],
+    )
+    pygame.draw.polygon(
+        screen,
+        seg("e"),
+        [
+            (x + m, midy),
+            (x + m + t, midy + t // 2),
+            (x + m + t, y + h - m - t),
+            (x + m, y + h - m),
+        ],
+    )
+    pygame.draw.polygon(
+        screen,
+        seg("c"),
+        [
+            (x + w - m, midy),
+            (x + w - m, y + h - m),
+            (x + w - m - t, y + h - m - t),
+            (x + w - m - t, midy + t // 2),
+        ],
+    )
 
 
 def draw_led_counter(screen, rect, value):
     """Draw a 3-digit LED counter (Win7 red-on-black) for value in rect."""
     pygame.draw.rect(screen, LED_BG, rect)
-    draw_bevel(screen, rect, raised=False, light=(150, 190, 172), dark=(20, 40, 32), width=1)
+    draw_bevel(
+        screen, rect, raised=False, light=(150, 190, 172), dark=(20, 40, 32), width=1
+    )
     text = f"{max(-99, min(999, value)):3d}"
     if value < 0:
         text = f"-{min(99, -value):02d}"
@@ -533,8 +808,8 @@ def draw_clock_icon(screen, cx, cy, r):
     """Small analog clock glyph left of the timer LED."""
     pygame.draw.circle(screen, SUBTEXT, (cx, cy), r)
     pygame.draw.circle(screen, LED_BG, (cx, cy), r - 2)
-    pygame.draw.line(screen, LED_ON, (cx, cy), (cx, cy - (r - 4)), 2)          # minute hand up
-    pygame.draw.line(screen, LED_ON, (cx, cy), (cx + (r - 5), cy), 2)          # hour hand right
+    pygame.draw.line(screen, LED_ON, (cx, cy), (cx, cy - (r - 4)), 2)  # minute hand up
+    pygame.draw.line(screen, LED_ON, (cx, cy), (cx + (r - 5), cy), 2)  # hour hand right
 
 
 # ---------------------------------------------------------------------------
@@ -597,9 +872,11 @@ def draw_dropdown(screen, font, panel, item_rects, hover_item, difficulty, theme
     for text, action, irect in item_rects:
         if text is None:
             midy = irect.y + irect.height // 2
-            pygame.draw.line(screen, MENU_SEP, (irect.x + 6, midy), (irect.right - 6, midy))
+            pygame.draw.line(
+                screen, MENU_SEP, (irect.x + 6, midy), (irect.right - 6, midy)
+            )
             continue
-        hovered = (hover_item is not None and _same_action(action, hover_item))
+        hovered = hover_item is not None and _same_action(action, hover_item)
         if hovered:
             pygame.draw.rect(screen, MENU_HOVER, irect)
         # radio check dot
@@ -607,7 +884,9 @@ def draw_dropdown(screen, font, panel, item_rects, hover_item, difficulty, theme
             dot = irect.y + irect.height // 2
             pygame.draw.circle(screen, TEXT, (irect.x + 6, dot), 3)
         t = font.render(text, True, TEXT)
-        screen.blit(t, (irect.x + MENU_PAD_X, irect.y + (irect.height - t.get_height()) // 2))
+        screen.blit(
+            t, (irect.x + MENU_PAD_X, irect.y + (irect.height - t.get_height()) // 2)
+        )
         # right-aligned hint (submenu arrow or shortcut)
         if isinstance(action, tuple) and action[0] == "submenu":
             hint = ">"
@@ -615,8 +894,13 @@ def draw_dropdown(screen, font, panel, item_rects, hover_item, difficulty, theme
             hint = SHORTCUT_HINTS.get(action, "")
         if hint:
             ht = font.render(hint, True, SUBTEXT)
-            screen.blit(ht, (irect.right - ht.get_width() - 8,
-                             irect.y + (irect.height - ht.get_height()) // 2))
+            screen.blit(
+                ht,
+                (
+                    irect.right - ht.get_width() - 8,
+                    irect.y + (irect.height - ht.get_height()) // 2,
+                ),
+            )
 
 
 def _same_action(a, b):
@@ -627,7 +911,9 @@ def _same_action(a, b):
     return a == b
 
 
-def draw_menubar(screen, font, W, open_menu, open_submenu, hover_item, menus, difficulty, theme):
+def draw_menubar(
+    screen, font, W, open_menu, open_submenu, hover_item, menus, difficulty, theme
+):
     """Draw the menu bar, the open dropdown (if any), and an open submenu flyout."""
     bar = pygame.Rect(0, 0, W, MENUBAR_H)
     pygame.draw.rect(screen, MENUBAR_BG, bar)
@@ -652,10 +938,18 @@ def draw_menubar(screen, font, W, open_menu, open_submenu, hover_item, menus, di
         # submenu flyout
         if open_submenu is not None:
             for text, action, irect in item_rects:
-                if isinstance(action, tuple) and action[0] == "submenu" and text == open_submenu:
+                if (
+                    isinstance(action, tuple)
+                    and action[0] == "submenu"
+                    and text == open_submenu
+                ):
                     sub_items = action[1]
-                    spanel, sitem_rects = dropdown_rects(irect, sub_items, font, below=False)
-                    draw_dropdown(screen, font, spanel, sitem_rects, hover_item, difficulty, theme)
+                    spanel, sitem_rects = dropdown_rects(
+                        irect, sub_items, font, below=False
+                    )
+                    draw_dropdown(
+                        screen, font, spanel, sitem_rects, hover_item, difficulty, theme
+                    )
                     break
         break
 
@@ -672,7 +966,11 @@ def hovered_menu_action(font, menus, open_menu, open_submenu, pos):
         # submenu takes priority (drawn on top)
         if open_submenu is not None:
             for text, action, irect in item_rects:
-                if isinstance(action, tuple) and action[0] == "submenu" and text == open_submenu:
+                if (
+                    isinstance(action, tuple)
+                    and action[0] == "submenu"
+                    and text == open_submenu
+                ):
                     _, sitem_rects = dropdown_rects(irect, action[1], font, below=False)
                     for st, sa, srect in sitem_rects:
                         if st is not None and srect.collidepoint(pos):
@@ -685,8 +983,20 @@ def hovered_menu_action(font, menus, open_menu, open_submenu, pos):
     return None
 
 
-def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stats,
-         elapsed):
+def draw(
+    screen,
+    board,
+    font,
+    big_font,
+    mono,
+    hover_cell,
+    flag_preview,
+    W,
+    H,
+    difficulty,
+    stats,
+    elapsed,
+):
     screen.fill(BG)
 
     # --- header: title bar + raised control strip ---
@@ -714,15 +1024,21 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
     clock_r = 9
     clock_cx = strip.x + 8 + clock_r
     draw_clock_icon(screen, clock_cx, strip.centery, clock_r)
-    left_led = pygame.Rect(clock_cx + clock_r + 6, strip.y + (strip.height - led_h) // 2, led_w, led_h)
+    left_led = pygame.Rect(
+        clock_cx + clock_r + 6, strip.y + (strip.height - led_h) // 2, led_w, led_h
+    )
     draw_led_counter(screen, left_led, int(elapsed))
 
     # right LED: mines remaining
-    right_led = pygame.Rect(strip.right - led_w - 8, strip.y + (strip.height - led_h) // 2, led_w, led_h)
+    right_led = pygame.Rect(
+        strip.right - led_w - 8, strip.y + (strip.height - led_h) // 2, led_w, led_h
+    )
     draw_led_counter(screen, right_led, remaining)
 
     # sunken play-field frame
-    grid_rect = pygame.Rect(PAD - 3, MARGIN_TOP - 3, board.cols * CELL + 6, board.rows * CELL + 6)
+    grid_rect = pygame.Rect(
+        PAD - 3, MARGIN_TOP - 3, board.cols * CELL + 6, board.rows * CELL + 6
+    )
     pygame.draw.rect(screen, FIELD_BG, grid_rect)
     draw_bevel(screen, grid_rect, raised=False, width=2)
 
@@ -735,10 +1051,24 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
                 base = REVEALED if (r + c) % 2 == 0 else REVEALED_ALT
                 pygame.draw.rect(screen, base, rect)
                 # thin light seams + soft inset shadow top/left
-                pygame.draw.line(screen, GRID_LINE, (rect.right - 1, rect.y), (rect.right - 1, rect.bottom - 1))
-                pygame.draw.line(screen, GRID_LINE, (rect.x, rect.bottom - 1), (rect.right - 1, rect.bottom - 1))
-                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y))
-                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1))
+                pygame.draw.line(
+                    screen,
+                    GRID_LINE,
+                    (rect.right - 1, rect.y),
+                    (rect.right - 1, rect.bottom - 1),
+                )
+                pygame.draw.line(
+                    screen,
+                    GRID_LINE,
+                    (rect.x, rect.bottom - 1),
+                    (rect.right - 1, rect.bottom - 1),
+                )
+                pygame.draw.line(
+                    screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y)
+                )
+                pygame.draw.line(
+                    screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1)
+                )
                 if (r, c) in board.mines:
                     draw_mine(screen, rect, exploded=(board.exploded == (r, c)))
                 elif board.counts[r][c] > 0:
@@ -749,16 +1079,22 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
                 draw_hidden(screen, rect, hover=(hover_cell == (r, c)))
                 if board.flagged[r][c]:
                     draw_flag(screen, rect)
+                elif flag_preview and hover_cell == (r, c):
+                    draw_flag_preview(screen, rect)
 
     if board.game_over and not board.won:
-        for (mr, mc) in board.mines:
+        for mr, mc in board.mines:
             if not board.revealed[mr][mc]:
                 x = PAD + mc * CELL
                 y = MARGIN_TOP + mr * CELL
                 rect = pygame.Rect(x, y, CELL, CELL)
                 pygame.draw.rect(screen, REVEALED, rect)
-                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y))
-                pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1))
+                pygame.draw.line(
+                    screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y)
+                )
+                pygame.draw.line(
+                    screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1)
+                )
                 if board.flagged[mr][mc]:
                     draw_flag(screen, rect)
                 else:
@@ -770,11 +1106,19 @@ def draw(screen, board, font, big_font, mono, hover_cell, W, H, difficulty, stat
                     y = MARGIN_TOP + r * CELL
                     rect = pygame.Rect(x, y, CELL, CELL)
                     pygame.draw.rect(screen, REVEALED, rect)
-                    pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y))
-                    pygame.draw.line(screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1))
+                    pygame.draw.line(
+                        screen, REVEALED_EDGE, rect.topleft, (rect.right - 1, rect.y)
+                    )
+                    pygame.draw.line(
+                        screen, REVEALED_EDGE, rect.topleft, (rect.x, rect.bottom - 1)
+                    )
                     draw_flag(screen, rect)
-                    pygame.draw.line(screen, ACCENT_BAD, rect.topleft, rect.bottomright, 3)
-                    pygame.draw.line(screen, ACCENT_BAD, rect.topright, rect.bottomleft, 3)
+                    pygame.draw.line(
+                        screen, ACCENT_BAD, rect.topleft, rect.bottomright, 3
+                    )
+                    pygame.draw.line(
+                        screen, ACCENT_BAD, rect.topright, rect.bottomleft, 3
+                    )
 
 
 def _fmt_time(secs):
@@ -805,11 +1149,21 @@ def draw_scoreboard_overlay(screen, font, big_font, mono, W, H, stats):
     title = big_font.render("SCOREBOARD", True, TEXT)
     screen.blit(title, (panel.x + pad, panel.y + pad))
 
-    col_x = [panel.x + pad, panel.x + pad + 150, panel.x + pad + 215,
-             panel.x + pad + 275, panel.x + pad + 340]
+    col_x = [
+        panel.x + pad,
+        panel.x + pad + 150,
+        panel.x + pad + 215,
+        panel.x + pad + 275,
+        panel.x + pad + 340,
+    ]
     y = panel.y + pad + line_h
-    header = [("Difficulty", TEXT), ("W", ACCENT_OK), ("L", ACCENT_BAD),
-              ("%", SUBTEXT), ("Best", SUBTEXT)]
+    header = [
+        ("Difficulty", TEXT),
+        ("W", ACCENT_OK),
+        ("L", ACCENT_BAD),
+        ("%", SUBTEXT),
+        ("Best", SUBTEXT),
+    ]
     for i, (h, col) in enumerate(header):
         screen.blit(mono.render(h, True, col), (col_x[i], y))
     y += line_h
@@ -818,7 +1172,13 @@ def draw_scoreboard_overlay(screen, font, big_font, mono, W, H, stats):
         s = stats[name]
         total = s["wins"] + s["losses"]
         pct = f"{(s['wins'] * 100 // total)}%" if total else "\u2014"
-        cells = [name, str(s["wins"]), str(s["losses"]), pct, _fmt_time(s.get("best_time"))]
+        cells = [
+            name,
+            str(s["wins"]),
+            str(s["losses"]),
+            pct,
+            _fmt_time(s.get("best_time")),
+        ]
         for i, txt in enumerate(cells):
             screen.blit(font.render(txt, True, TEXT), (col_x[i], y + 4))
         y += line_h
@@ -833,15 +1193,17 @@ def draw_scoreboard_overlay(screen, font, big_font, mono, W, H, stats):
         y += score_h
         scores = stats[name].get("scores", [])
         if not scores:
-            screen.blit(font.render("   \u2014 no scores yet \u2014", True, SUBTEXT),
-                        (panel.x + pad + 12, y))
+            screen.blit(
+                font.render("   \u2014 no scores yet \u2014", True, SUBTEXT),
+                (panel.x + pad + 12, y),
+            )
             y += score_h
             y += score_h * 2  # keep spacing consistent (3 slots reserved)
             continue
         for i in range(3):
             if i < len(scores):
                 e = scores[i]
-                rank = mono.render(f"#{i+1}", True, medal[i])
+                rank = mono.render(f"#{i + 1}", True, medal[i])
                 nm = font.render(e["name"], True, TEXT)
                 tm = font.render(_fmt_time(e["time"]), True, SUBTEXT)
                 screen.blit(rank, (panel.x + pad + 12, y))
@@ -850,10 +1212,15 @@ def draw_scoreboard_overlay(screen, font, big_font, mono, W, H, stats):
             y += score_h
 
     hint = font.render("S or click to close", True, SUBTEXT)
-    screen.blit(hint, (panel.right - hint.get_width() - pad, panel.bottom - hint.get_height() - 8))
+    screen.blit(
+        hint,
+        (panel.right - hint.get_width() - pad, panel.bottom - hint.get_height() - 8),
+    )
 
 
-def draw_initials_overlay(screen, font, big_font, mono, W, H, difficulty, secs, initials, rank):
+def draw_initials_overlay(
+    screen, font, big_font, mono, W, H, difficulty, secs, initials, rank
+):
     overlay = pygame.Surface((W, H), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 190))
     screen.blit(overlay, (0, 0))
@@ -867,7 +1234,9 @@ def draw_initials_overlay(screen, font, big_font, mono, W, H, difficulty, secs, 
     title = big_font.render("NEW HIGH SCORE", True, ACCENT_OK)
     screen.blit(title, title.get_rect(centerx=panel.centerx, y=panel.y + 16))
 
-    sub = font.render(f"{difficulty}  \u00b7  #{rank}  \u00b7  {_fmt_time(secs)}", True, SUBTEXT)
+    sub = font.render(
+        f"{difficulty}  \u00b7  #{rank}  \u00b7  {_fmt_time(secs)}", True, SUBTEXT
+    )
     screen.blit(sub, sub.get_rect(centerx=panel.centerx, y=panel.y + 48))
 
     # three character boxes
@@ -886,8 +1255,13 @@ def draw_initials_overlay(screen, font, big_font, mono, W, H, difficulty, secs, 
             screen.blit(g, g.get_rect(center=r.center))
         # caret under the active slot
         if i == active and len(initials) < 3:
-            pygame.draw.line(screen, ACCENT_SEL, (r.x + 8, r.bottom - 8),
-                             (r.right - 8, r.bottom - 8), 3)
+            pygame.draw.line(
+                screen,
+                ACCENT_SEL,
+                (r.x + 8, r.bottom - 8),
+                (r.right - 8, r.bottom - 8),
+                3,
+            )
 
     hint = font.render("A\u2013Z to type \u00b7 Enter to save", True, SUBTEXT)
     screen.blit(hint, hint.get_rect(centerx=panel.centerx, y=panel.bottom - 30))
@@ -905,7 +1279,7 @@ def draw_about_overlay(screen, font, big_font, W, H):
     lines = [
         (big_font, "Pinesweeper", TEXT),
         (font, "A minesweeper in pygame.", SUBTEXT),
-        (font, "Left-click reveals \u00b7 right-click flags", SUBTEXT),
+        (font, "Left-click reveals \u00b7 right/Shift-click flags", SUBTEXT),
         (font, "Double-click a number to chord.", SUBTEXT),
     ]
     y = panel.y + 16
@@ -913,7 +1287,10 @@ def draw_about_overlay(screen, font, big_font, W, H):
         screen.blit(f.render(text, True, col), (panel.x + 18, y))
         y += f.get_height() + 8
     hint = font.render("click to close", True, SUBTEXT)
-    screen.blit(hint, (panel.right - hint.get_width() - 14, panel.bottom - hint.get_height() - 8))
+    screen.blit(
+        hint,
+        (panel.right - hint.get_width() - 14, panel.bottom - hint.get_height() - 8),
+    )
 
 
 def draw_shortcuts_overlay(screen, font, big_font, W, H):
@@ -922,7 +1299,7 @@ def draw_shortcuts_overlay(screen, font, big_font, W, H):
     screen.blit(overlay, (0, 0))
     rows = [
         ("Left click", "Reveal cell"),
-        ("Right click", "Toggle flag"),
+        ("Right / Shift+click", "Toggle flag"),
         ("Double click", "Chord (reveal neighbors)"),
         ("F2 / R", "New game"),
         ("B / I / E", "Beginner / Intermediate / Expert"),
@@ -935,19 +1312,29 @@ def draw_shortcuts_overlay(screen, font, big_font, W, H):
     panel = pygame.Rect((W - panel_w) // 2, (H - panel_h) // 2, panel_w, panel_h)
     pygame.draw.rect(screen, PANEL, panel, border_radius=8)
     pygame.draw.rect(screen, GRID_LINE, panel, 1, border_radius=8)
-    screen.blit(big_font.render("SHORTCUTS", True, TEXT), (panel.x + pad, panel.y + pad))
+    screen.blit(
+        big_font.render("SHORTCUTS", True, TEXT), (panel.x + pad, panel.y + pad)
+    )
     y = panel.y + pad + line_h + 6
     for key, desc in rows:
         screen.blit(font.render(key, True, ACCENT_SEL), (panel.x + pad, y))
         screen.blit(font.render(desc, True, TEXT), (panel.x + pad + 120, y))
         y += line_h
     hint = font.render("click to close", True, SUBTEXT)
-    screen.blit(hint, (panel.right - hint.get_width() - 14, panel.bottom - hint.get_height() - 8))
+    screen.blit(
+        hint,
+        (panel.right - hint.get_width() - 14, panel.bottom - hint.get_height() - 8),
+    )
 
 
 def cell_at(pos, board):
     mx, my = pos
-    if my < MARGIN_TOP or mx < PAD or mx >= PAD + board.cols * CELL or my >= MARGIN_TOP + board.rows * CELL:
+    if (
+        my < MARGIN_TOP
+        or mx < PAD
+        or mx >= PAD + board.cols * CELL
+        or my >= MARGIN_TOP + board.rows * CELL
+    ):
         return None
     return ((my - MARGIN_TOP) // CELL, (mx - PAD) // CELL)
 
@@ -967,7 +1354,7 @@ def _resource_path(rel):
     return os.path.join(base, rel)
 
 
-def main():
+async def main():
     pygame.init()
     pygame.display.set_caption("Pinesweeper")
     try:
@@ -996,13 +1383,14 @@ def main():
     show_shortcuts = False
     open_menu = None
     open_submenu = None
-    entering_initials = False   # initials-capture overlay active
-    initials = ""               # buffer for the 3-letter name
-    pending_rank = 0            # provisional rank shown in the overlay
+    entering_initials = False  # initials-capture overlay active
+    initials = ""  # buffer for the 3-letter name
+    pending_rank = 0  # provisional rank shown in the overlay
+    running = True
 
     # timer state
-    start_ticks = None      # ms when the game timer started (first reveal)
-    frozen_elapsed = 0.0    # elapsed seconds frozen at game over
+    start_ticks = None  # ms when the game timer started (first reveal)
+    frozen_elapsed = 0.0  # elapsed seconds frozen at game over
 
     def close_overlays():
         nonlocal show_scoreboard, show_about, show_shortcuts, open_menu, open_submenu
@@ -1024,7 +1412,15 @@ def main():
         last_click_cell = None
 
     def switch_difficulty(new_name):
-        nonlocal board, difficulty, W, H, screen, last_click_cell, start_ticks, frozen_elapsed
+        nonlocal \
+            board, \
+            difficulty, \
+            W, \
+            H, \
+            screen, \
+            last_click_cell, \
+            start_ticks, \
+            frozen_elapsed
         difficulty = new_name
         board = make_board(difficulty)
         W, H = window_size(board.rows, board.cols)
@@ -1034,12 +1430,11 @@ def main():
         frozen_elapsed = 0.0
 
     def do_action(action):
-        nonlocal show_scoreboard, show_about, show_shortcuts, settings
+        nonlocal show_scoreboard, show_about, show_shortcuts, settings, running
         if action == "new":
             new_game()
         elif action == "exit":
-            pygame.quit()
-            sys.exit()
+            running = False
         elif action == "stats":
             show_scoreboard = True
         elif action == "about":
@@ -1054,14 +1449,16 @@ def main():
             settings["theme"] = name
             save_state(stats, settings)
 
-    while True:
+    while running:
         # start timer on first reveal
         if start_ticks is None and board.any_revealed() and not board.game_over:
             start_ticks = pygame.time.get_ticks()
 
         # freeze timer + record result once on game over
         if board.game_over and not board.recorded:
-            frozen_elapsed = (pygame.time.get_ticks() - start_ticks) / 1000.0 if start_ticks else 0.0
+            frozen_elapsed = (
+                (pygame.time.get_ticks() - start_ticks) / 1000.0 if start_ticks else 0.0
+            )
             if board.won:
                 stats[difficulty]["wins"] += 1
                 bt = stats[difficulty].get("best_time")
@@ -1073,7 +1470,9 @@ def main():
                     entering_initials = True
                     initials = ""
                     # provisional rank = where this time would land
-                    pending_rank = sum(1 for s in scores if s["time"] <= frozen_elapsed) + 1
+                    pending_rank = (
+                        sum(1 for s in scores if s["time"] <= frozen_elapsed) + 1
+                    )
                     close_overlays()
             else:
                 stats[difficulty]["losses"] += 1
@@ -1084,8 +1483,8 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                running = False
+                break
 
             # initials capture takes over all keyboard input while active
             if entering_initials and event.type == pygame.KEYDOWN:
@@ -1140,16 +1539,26 @@ def main():
 
                 # a menu is open: resolve clicks inside its dropdown/submenu
                 if open_menu is not None:
-                    action = hovered_menu_action(font, menus, open_menu, open_submenu, event.pos)
+                    action = hovered_menu_action(
+                        font, menus, open_menu, open_submenu, event.pos
+                    )
                     if action is not None:
                         if isinstance(action, tuple) and action[0] == "submenu":
                             # toggle the submenu; find which item text owns it
                             for label, items, rect in labels:
                                 if label == open_menu:
-                                    _, item_rects = dropdown_rects(rect, items, font, below=True)
+                                    _, item_rects = dropdown_rects(
+                                        rect, items, font, below=True
+                                    )
                                     for text, act, irect in item_rects:
-                                        if isinstance(act, tuple) and act[0] == "submenu" and irect.collidepoint(event.pos):
-                                            open_submenu = None if open_submenu == text else text
+                                        if (
+                                            isinstance(act, tuple)
+                                            and act[0] == "submenu"
+                                            and irect.collidepoint(event.pos)
+                                        ):
+                                            open_submenu = (
+                                                None if open_submenu == text else text
+                                            )
                                             break
                                     break
                         else:
@@ -1166,6 +1575,10 @@ def main():
                 if cell is None:
                     continue
                 r, c = cell
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                    board.toggle_flag(r, c)
+                    last_click_cell = None
+                    continue
                 now = pygame.time.get_ticks()
                 if last_click_cell == cell and now - last_click_time <= DOUBLE_CLICK_MS:
                     board.chord(r, c)
@@ -1176,7 +1589,9 @@ def main():
                     last_click_time = now
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-                if open_menu is None and not (show_scoreboard or show_about or show_shortcuts):
+                if open_menu is None and not (
+                    show_scoreboard or show_about or show_shortcuts
+                ):
                     cell = cell_at(event.pos, board)
                     if cell is not None:
                         board.toggle_flag(*cell)
@@ -1188,20 +1603,57 @@ def main():
                 if label == open_menu:
                     _, item_rects = dropdown_rects(rect, items, font, below=True)
                     for text, act, irect in item_rects:
-                        if isinstance(act, tuple) and act[0] == "submenu" and irect.collidepoint(mouse_pos):
+                        if (
+                            isinstance(act, tuple)
+                            and act[0] == "submenu"
+                            and irect.collidepoint(mouse_pos)
+                        ):
                             open_submenu = text
                     break
 
-        hover_item = hovered_menu_action(font, menus, open_menu, open_submenu, mouse_pos)
+        hover_item = hovered_menu_action(
+            font, menus, open_menu, open_submenu, mouse_pos
+        )
 
-        draw(screen, board, font, big_font, mono, hover, W, H, difficulty, stats,
-             current_elapsed())
-        draw_menubar(screen, font, W, open_menu, open_submenu, hover_item, menus,
-                     difficulty, settings["theme"])
+        draw(
+            screen,
+            board,
+            font,
+            big_font,
+            mono,
+            hover,
+            bool(pygame.key.get_mods() & pygame.KMOD_SHIFT),
+            W,
+            H,
+            difficulty,
+            stats,
+            current_elapsed(),
+        )
+        draw_menubar(
+            screen,
+            font,
+            W,
+            open_menu,
+            open_submenu,
+            hover_item,
+            menus,
+            difficulty,
+            settings["theme"],
+        )
 
         if entering_initials:
-            draw_initials_overlay(screen, font, big_font, mono, W, H, difficulty,
-                                  frozen_elapsed, initials, pending_rank)
+            draw_initials_overlay(
+                screen,
+                font,
+                big_font,
+                mono,
+                W,
+                H,
+                difficulty,
+                frozen_elapsed,
+                initials,
+                pending_rank,
+            )
         elif show_scoreboard:
             draw_scoreboard_overlay(screen, font, big_font, mono, W, H, stats)
         elif show_about:
@@ -1211,7 +1663,10 @@ def main():
 
         pygame.display.flip()
         clock.tick(60)
+        await asyncio.sleep(0)
+
+    pygame.quit()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
